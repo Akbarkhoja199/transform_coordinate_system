@@ -106,14 +106,62 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space 
 
 /* ══ THEME TOGGLE ══ */
 .theme-toggle{
-  display:flex;align-items:center;gap:6px;
+  width:32px;height:32px;
+  display:flex;align-items:center;justify-content:center;
   background:var(--panel);border:1px solid var(--border2);
-  color:var(--text);font-family:'Space Grotesk',sans-serif;
-  font-size:11px;font-weight:600;
-  padding:4px 12px;border-radius:20px;
+  border-radius:8px;font-size:16px;
   cursor:pointer;transition:all .2s;
 }
-.theme-toggle:hover{border-color:var(--accent2);color:var(--accent2);background:rgba(0,153,255,.08)}
+.theme-toggle:hover{border-color:var(--accent2);background:rgba(0,153,255,.08)}
+
+/* ══ TILE PANEL ══ */
+.btn-tile-icon{
+  margin-left:auto;
+  width:26px;height:26px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--panel);border:1px solid var(--border2);
+  border-radius:6px;font-size:14px;
+  cursor:pointer;transition:all .2s;flex-shrink:0;
+}
+.btn-tile-icon:hover{border-color:var(--accent2);background:rgba(0,153,255,.1)}
+.btn-tile-icon.open{border-color:var(--accent);background:rgba(0,229,160,.1)}
+
+.tile-panel{
+  position:absolute;top:38px;right:0;z-index:1000;
+  background:var(--surface);
+  border:1px solid var(--border2);
+  border-radius:10px;
+  width:190px;
+  overflow:hidden;
+  box-shadow:0 8px 28px rgba(0,0,0,.45);
+  transform-origin:top right;
+  transition:transform .2s cubic-bezier(.22,.68,0,1.2), opacity .15s;
+}
+.tile-panel.hidden{transform:scale(.92) translateY(-6px);opacity:0;pointer-events:none}
+.tile-panel-header{
+  padding:8px 12px;
+  font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  color:var(--muted);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.tile-btn{
+  display:flex;align-items:center;gap:8px;
+  width:100%;padding:8px 12px;
+  background:none;border:none;color:var(--text);
+  font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;
+  cursor:pointer;transition:background .15s,color .15s;
+  border-bottom:1px solid rgba(26,47,61,.35);text-align:left;
+}
+.tile-btn:last-child{border-bottom:none}
+.tile-btn:hover{background:rgba(0,153,255,.07);color:var(--accent2)}
+.tile-btn.active{background:rgba(0,229,160,.07);color:var(--accent)}
+.tile-btn .tdot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--border2);flex-shrink:0;transition:background .2s;
+  margin-left:auto;
+}
+.tile-btn.active .tdot{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+.tile-icon{font-size:13px;flex-shrink:0}
 
 /* ══ SIDEBAR SECTIONS ══ */
 .sb-section{
@@ -304,7 +352,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space 
     <div class="topbar-right">
       <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Режимни алмаштириш">
         <span id="themeIcon">🌙</span>
-        <span id="themeLabel">Тунги</span>
       </button>
       <div class="coord-pill" id="coordPill">—</div>
     </div>
@@ -315,12 +362,31 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space 
     <!-- MAP -->
     <div id="map"></div>
 
-    <!-- SIDEBAR -->
+  <!-- SIDEBAR -->
     <div class="sidebar">
 
       <!-- 1. UPLOAD -->
-      <div class="sb-section">
-        <div class="sb-label"><span class="num" id="n1">1</span> Excel файл юклаш</div>
+      <div class="sb-section" style="position:relative">
+        <div class="sb-label">
+          <span class="num" id="n1">1</span> Excel файл юклаш
+          <button class="btn-tile-icon" id="btnTileOpen" onclick="toggleTilePanel()" title="Подложка танлаш">🗺️</button>
+        </div>
+
+        <!-- TILE DROPDOWN -->
+        <div class="tile-panel hidden" id="tilePanel">
+          <div class="tile-panel-header">
+            <span>Тайл подложка</span>
+            <span style="cursor:pointer;font-size:12px;line-height:1" onclick="toggleTilePanel()">✕</span>
+          </div>
+          <button class="tile-btn active" data-tile="topo"      onclick="selectTile(this)"><span class="tile-icon">🗺️</span><span class="tdot"></span>Топографик</button>
+          <button class="tile-btn"        data-tile="satellite" onclick="selectTile(this)"><span class="tile-icon">🛰️</span><span class="tdot"></span>Сателлит</button>
+          <button class="tile-btn"        data-tile="streets"   onclick="selectTile(this)"><span class="tile-icon">🏙️</span><span class="tdot"></span>Кўчалар</button>
+          <button class="tile-btn"        data-tile="dark"      onclick="selectTile(this)"><span class="tile-icon">🌑</span><span class="tdot"></span>Dark Gray</button>
+          <button class="tile-btn"        data-tile="light"     onclick="selectTile(this)"><span class="tile-icon">⬜</span><span class="tdot"></span>Light Gray</button>
+          <button class="tile-btn"        data-tile="relief"    onclick="selectTile(this)"><span class="tile-icon">⛰️</span><span class="tdot"></span>Рельеф</button>
+          <button class="tile-btn"        data-tile="natgeo"    onclick="selectTile(this)"><span class="tile-icon">🌿</span><span class="tdot"></span>Nat. Geographic</button>
+          <button class="tile-btn"        data-tile="firefly"   onclick="selectTile(this)"><span class="tile-icon">✨</span><span class="tdot"></span>Firefly</button>
+        </div>
         <div id="uploadZone" class="upload-zone">
           <input type="file" id="fileInput" accept=".xlsx,.xls,.csv"/>
           <div class="upload-icon">📂</div>
@@ -446,27 +512,50 @@ const map = L.map('map',{center:[41.3,63.5],zoom:6,zoomControl:false});
 L.control.zoom({position:'bottomleft'}).addTo(map);
 L.control.scale({imperial:false,position:'bottomleft'}).addTo(map);
 
-const TILES = {
-  dark:  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}),
-  light: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}),
+const BASEMAPS = {
+  topo:      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}),
+  satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri, Maxar',maxZoom:19}),
+  streets:   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}),
+  dark:      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:16}),
+  light:     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:16}),
+  relief:    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:13}),
+  natgeo:    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri, NatGeo',maxZoom:16}),
+  firefly:   L.tileLayer('https://fly.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Firefly/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}),
 };
+let currentBasemap = BASEMAPS.topo;
+currentBasemap.addTo(map);
+
+// ── Tile panel ──
+let tilePanelOpen = false;
+function toggleTilePanel(){
+  tilePanelOpen = !tilePanelOpen;
+  document.getElementById('tilePanel').classList.toggle('hidden', !tilePanelOpen);
+  document.getElementById('btnTileOpen').classList.toggle('open', tilePanelOpen);
+}
+// Close on map click
+map.on('click', ()=>{ if(tilePanelOpen){ tilePanelOpen=false; document.getElementById('tilePanel').classList.add('hidden'); document.getElementById('btnTileOpen').classList.remove('open'); }});
+
+function selectTile(btn){
+  const key = btn.dataset.tile;
+  if(!BASEMAPS[key]) return;
+  map.removeLayer(currentBasemap);
+  currentBasemap = BASEMAPS[key];
+  currentBasemap.addTo(map);
+  document.querySelectorAll('.tile-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ── Theme (UI only, no tile change) ──
 let isDark = true;
-TILES.dark.addTo(map);
 
 function applyTheme(){
   const root = document.documentElement;
   if(isDark){
     root.classList.remove('light');
-    if(map.hasLayer(TILES.light)) map.removeLayer(TILES.light);
-    if(!map.hasLayer(TILES.dark)) TILES.dark.addTo(map);
     document.getElementById('themeIcon').textContent='🌙';
-    document.getElementById('themeLabel').textContent='Тунги';
   } else {
     root.classList.add('light');
-    if(map.hasLayer(TILES.dark)) map.removeLayer(TILES.dark);
-    if(!map.hasLayer(TILES.light)) TILES.light.addTo(map);
     document.getElementById('themeIcon').textContent='☀️';
-    document.getElementById('themeLabel').textContent='Кундузги';
   }
 }
 
