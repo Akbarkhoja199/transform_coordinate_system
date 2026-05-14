@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Excel → Shapefile Converter</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- SheetJS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- JSZip (shpwrite dependency) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- shpwrite -->
+<script src="https://cdn.jsdelivr.net/npm/shpwrite@0.3.2/shpwrite.js"></script>
+<!-- proj4js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#050a0e;
+  --surface:#0c1419;
+  --panel:#101c24;
+  --border:#1a2f3d;
+  --border2:#243d50;
+  --accent:#00e5a0;
+  --accent2:#0099ff;
+  --warn:#ffaa00;
+  --danger:#ff4444;
+  --text:#d4e8f0;
+  --muted:#4a7a94;
+  --radius:8px;
+  --sidebar:340px;
+}
+
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;overflow:hidden}
+
+/* ══ LAYOUT ══ */
+.app{display:flex;height:100vh;flex-direction:column}
+.topbar{
+  height:52px;flex-shrink:0;
+  background:rgba(5,10,14,0.95);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:12px;
+  backdrop-filter:blur(10px);
+  z-index:1000;
+}
+.main{display:flex;flex:1;overflow:hidden}
+#map{flex:1}
+.sidebar{
+  width:var(--sidebar);flex-shrink:0;
+  background:var(--surface);
+  border-left:1px solid var(--border);
+  display:flex;flex-direction:column;
+  overflow:hidden;
+  z-index:500;
+}
+
+/* ══ TOPBAR ══ */
+.brand{
+  font-size:15px;font-weight:700;letter-spacing:-0.3px;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.step-trail{
+  display:flex;align-items:center;gap:6px;margin-left:8px;
+}
+.step{
+  font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;
+  padding:3px 10px;border-radius:20px;
+  border:1px solid var(--border2);color:var(--muted);
+  transition:all .2s;
+}
+.step.done{border-color:var(--accent);color:var(--accent);background:rgba(0,229,160,.08)}
+.step.active{border-color:var(--accent2);color:var(--accent2);background:rgba(0,153,255,.12)}
+.step-sep{color:var(--border2);font-size:12px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.coord-pill{
+  font-family:'Fira Code',monospace;font-size:10px;color:var(--muted);
+  background:var(--panel);border:1px solid var(--border);
+  padding:3px 10px;border-radius:20px;transition:color .2s;
+}
+.coord-pill.live{color:var(--accent2)}
+
+/* ══ SIDEBAR SECTIONS ══ */
+.sb-section{
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.sb-section:last-child{border-bottom:none}
+.sb-label{
+  font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:6px;
+}
+.sb-label .num{
+  width:16px;height:16px;border-radius:50%;
+  background:var(--accent2);color:#000;font-size:9px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.sb-label .num.done{background:var(--accent)}
+
+/* ══ UPLOAD ZONE ══ */
+.upload-zone{
+  border:1.5px dashed var(--border2);border-radius:var(--radius);
+  padding:20px;text-align:center;cursor:pointer;
+  transition:all .2s;position:relative;
+}
+.upload-zone:hover,.upload-zone.drag{
+  border-color:var(--accent2);background:rgba(0,153,255,.06);
+}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.upload-icon{font-size:24px;margin-bottom:6px}
+.upload-text{font-size:12px;color:var(--muted)}
+.upload-text strong{color:var(--accent2);font-weight:600}
+.file-loaded{
+  display:flex;align-items:center;gap:8px;
+  background:rgba(0,229,160,.06);border:1px solid rgba(0,229,160,.3);
+  border-radius:var(--radius);padding:8px 12px;
+  font-size:12px;
+}
+.file-loaded .fname{font-weight:600;color:var(--accent);flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-loaded .fcount{color:var(--muted);font-family:'Fira Code',monospace;font-size:10px}
+.btn-clear{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px}
+.btn-clear:hover{color:var(--danger)}
+
+/* ══ TABLE ══ */
+.table-wrap{
+  flex:1;overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:var(--border2) transparent;
+}
+.table-wrap::-webkit-scrollbar{width:4px}
+.table-wrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+.data-table{width:100%;border-collapse:collapse;font-size:11px}
+.data-table th{
+  position:sticky;top:0;background:var(--panel);
+  padding:8px 10px;text-align:left;
+  font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--muted);border-bottom:1px solid var(--border);
+  z-index:2;
+}
+.data-table td{
+  padding:7px 10px;border-bottom:1px solid rgba(26,47,61,.5);
+  font-family:'Fira Code',monospace;font-size:11px;color:var(--text);
+  cursor:pointer;transition:background .1s;
+}
+.data-table tr:hover td{background:rgba(0,153,255,.06)}
+.data-table tr.selected td{
+  background:rgba(0,229,160,.08);
+  color:var(--accent);
+}
+.data-table td.chk{width:32px;text-align:center}
+.cb{
+  width:14px;height:14px;border-radius:3px;
+  border:1.5px solid var(--border2);background:transparent;
+  cursor:pointer;accent-color:var(--accent);
+}
+
+/* ══ PROJ SELECT ══ */
+.proj-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.proj-btn{
+  padding:7px 8px;border-radius:var(--radius);
+  border:1px solid var(--border2);background:var(--panel);
+  color:var(--muted);font-size:10px;font-weight:600;
+  cursor:pointer;transition:all .15s;text-align:left;
+  font-family:'Space Grotesk',sans-serif;
+  line-height:1.3;
+}
+.proj-btn:hover{border-color:var(--accent2);color:var(--accent2);background:rgba(0,153,255,.06)}
+.proj-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(0,229,160,.08)}
+.proj-btn .epsg{
+  display:block;font-family:'Fira Code',monospace;font-size:9px;
+  color:var(--muted);margin-top:2px;
+}
+.proj-btn.active .epsg{color:rgba(0,229,160,.6)}
+
+/* ══ EXPORT BTN ══ */
+.btn-export{
+  width:100%;padding:12px;border-radius:var(--radius);
+  background:linear-gradient(135deg,var(--accent),#00b377);
+  border:none;color:#000;font-family:'Space Grotesk',sans-serif;
+  font-size:13px;font-weight:700;letter-spacing:.3px;
+  cursor:pointer;transition:all .2s;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.btn-export:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,229,160,.35)}
+.btn-export:active{transform:translateY(0)}
+.btn-export:disabled{background:var(--border);color:var(--muted);cursor:not-allowed;transform:none;box-shadow:none}
+.btn-export .count-badge{
+  background:rgba(0,0,0,.25);border-radius:10px;
+  padding:2px 7px;font-size:11px;
+}
+
+/* ══ MAP MARKER CUSTOM ══ */
+.pulse-dot{
+  width:12px;height:12px;border-radius:50%;
+  background:var(--accent2);
+  box-shadow:0 0 0 0 rgba(0,153,255,.6);
+  animation:pulse 2s infinite;
+}
+.pulse-dot.selected{background:var(--accent);box-shadow:0 0 0 0 rgba(0,229,160,.6)}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(0,153,255,.6)}
+  70%{box-shadow:0 0 0 8px rgba(0,153,255,0)}
+  100%{box-shadow:0 0 0 0 rgba(0,153,255,0)}
+}
+
+/* ══ TOAST ══ */
+.toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(60px);
+  background:var(--panel);border:1px solid var(--border2);
+  border-radius:var(--radius);padding:10px 18px;
+  font-size:12px;font-weight:600;
+  display:flex;align-items:center;gap:8px;
+  z-index:9999;transition:transform .3s cubic-bezier(.22,.68,0,1.2);
+  box-shadow:0 8px 32px rgba(0,0,0,.5);
+  pointer-events:none;
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.success{border-color:var(--accent);color:var(--accent)}
+.toast.error{border-color:var(--danger);color:var(--danger)}
+.toast.info{border-color:var(--accent2);color:var(--accent2)}
+
+/* ══ EMPTY STATE ══ */
+.empty-state{
+  padding:30px 16px;text-align:center;
+  color:var(--muted);font-size:12px;
+}
+.empty-state .icon{font-size:32px;margin-bottom:8px;opacity:.4}
+
+/* ══ STATUS BAR ══ */
+.statusbar{
+  position:fixed;bottom:0;left:0;
+  right:var(--sidebar);
+  height:26px;
+  background:rgba(5,10,14,.9);
+  border-top:1px solid var(--border);
+  display:flex;align-items:center;padding:0 12px;gap:16px;
+  font-family:'Fira Code',monospace;font-size:9px;color:var(--muted);
+  z-index:500;
+}
+.status-dot{width:5px;height:5px;border-radius:50%;background:#22c55e;box-shadow:0 0 5px #22c55e}
+
+/* SELECT ALL row */
+.sel-all-row{
+  padding:6px 10px;
+  display:flex;align-items:center;gap:8px;
+  background:var(--panel);border-bottom:1px solid var(--border);
+  font-size:10px;color:var(--muted);cursor:pointer;
+  transition:color .15s;
+}
+.sel-all-row:hover{color:var(--text)}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="brand">GeoPoint</div>
+    <div class="step-trail">
+      <div class="step" id="step1">01 ЮКЛАШ</div>
+      <div class="step-sep">›</div>
+      <div class="step" id="step2">02 ТАНЛАШ</div>
+      <div class="step-sep">›</div>
+      <div class="step" id="step3">03 ЭКСПОРТ</div>
+    </div>
+    <div class="topbar-right">
+      <div class="coord-pill" id="coordPill">—</div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- MAP -->
+    <div id="map"></div>
+
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+
+      <!-- 1. UPLOAD -->
+      <div class="sb-section">
+        <div class="sb-label"><span class="num" id="n1">1</span> Excel файл юклаш</div>
+        <div id="uploadZone" class="upload-zone">
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.csv"/>
+          <div class="upload-icon">📂</div>
+          <div class="upload-text">
+            <strong>Файл танланг</strong> ёки шу ерга ташланг<br>
+            <span style="font-size:10px;color:var(--muted)">.xlsx / .xls / .csv қабул қилинади</span>
+          </div>
+        </div>
+        <div id="fileInfo" style="display:none"></div>
+      </div>
+
+      <!-- 2. TABLE -->
+      <div class="sb-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding-bottom:0">
+        <div class="sb-label"><span class="num" id="n2">2</span> Нуқталарни танланг</div>
+        <div id="emptyState" class="empty-state">
+          <div class="icon">📋</div>
+          Excel файл юкланмаган
+        </div>
+        <div id="tableContainer" style="display:none;flex:1;overflow:hidden;display:none;flex-direction:column">
+          <div class="sel-all-row" onclick="toggleSelectAll()">
+            <input type="checkbox" class="cb" id="cbAll" onclick="event.stopPropagation()"> 
+            <span id="selAllText">Барчасини танлаш</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="chk"></th>
+                  <th>#</th>
+                  <th>Latitude</th>
+                  <th>Longitude</th>
+                </tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. PROJECTION + EXPORT -->
+      <div class="sb-section">
+        <div class="sb-label"><span class="num" id="n3">3</span> Проекция ва экспорт</div>
+        <div class="proj-grid" id="projGrid">
+          <button class="proj-btn active" data-epsg="4326" onclick="selectProj(this)">
+            WGS 84 <span class="epsg">EPSG:4326</span>
+          </button>
+          <button class="proj-btn" data-epsg="3857" onclick="selectProj(this)">
+            Web Mercator <span class="epsg">EPSG:3857</span>
+          </button>
+          <button class="proj-btn" data-epsg="32640" onclick="selectProj(this)">
+            UTM Zone 40N <span class="epsg">EPSG:32640</span>
+          </button>
+          <button class="proj-btn" data-epsg="32641" onclick="selectProj(this)">
+            UTM Zone 41N <span class="epsg">EPSG:32641</span>
+          </button>
+          <button class="proj-btn" data-epsg="32642" onclick="selectProj(this)">
+            UTM Zone 42N <span class="epsg">EPSG:32642</span>
+          </button>
+          <button class="proj-btn" data-epsg="32643" onclick="selectProj(this)">
+            UTM Zone 43N <span class="epsg">EPSG:32643</span>
+          </button>
+          <button class="proj-btn" data-epsg="32644" onclick="selectProj(this)">
+            UTM Zone 44N <span class="epsg">EPSG:32644</span>
+          </button>
+          <button class="proj-btn" data-epsg="4284" onclick="selectProj(this)">
+            Pulkovo 1942 <span class="epsg">EPSG:4284</span>
+          </button>
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn-export" id="btnExport" disabled onclick="exportShapefile()">
+            <span>⬇ Shapefile юклаб олиш</span>
+            <span class="count-badge" id="exportCount">0 та</span>
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /sidebar -->
+  </div>
+</div>
+
+<!-- STATUS BAR -->
+<div class="statusbar">
+  <div class="status-dot"></div>
+  <span>Esri Basemap</span>
+  <span>|</span>
+  <span>Zoom: <span id="zoomVal" style="color:var(--accent2)">—</span></span>
+  <span>|</span>
+  <span id="markerCount" style="color:var(--accent)">0 нуқта</span>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════
+// PROJ4 DEFINITIONS
+// ══════════════════════════════════════
+proj4.defs('EPSG:4326', '+proj=longlat +datum=WGS84 +no_defs');
+proj4.defs('EPSG:3857', '+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs');
+proj4.defs('EPSG:32640', '+proj=utm +zone=40 +datum=WGS84 +units=m +no_defs');
+proj4.defs('EPSG:32641', '+proj=utm +zone=41 +datum=WGS84 +units=m +no_defs');
+proj4.defs('EPSG:32642', '+proj=utm +zone=42 +datum=WGS84 +units=m +no_defs');
+proj4.defs('EPSG:32643', '+proj=utm +zone=43 +datum=WGS84 +units=m +no_defs');
+proj4.defs('EPSG:32644', '+proj=utm +zone=44 +datum=WGS84 +units=m +no_defs');
+proj4.defs('EPSG:4284', '+proj=longlat +ellps=krass +towgs84=23.92,-141.27,-80.9,0,0.35,0.82,-0.12 +no_defs');
+
+// WKT strings for .prj file
+const WKT = {
+  4326: 'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]',
+  3857: 'PROJCS["WGS_1984_Web_Mercator_Auxiliary_Sphere",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Mercator_Auxiliary_Sphere"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",0.0],PARAMETER["Standard_Parallel_1",0.0],PARAMETER["Auxiliary_Sphere_Type",0.0],UNIT["Meter",1.0]]',
+  32640: 'PROJCS["WGS_1984_UTM_Zone_40N",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",57.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]',
+  32641: 'PROJCS["WGS_1984_UTM_Zone_41N",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",63.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]',
+  32642: 'PROJCS["WGS_1984_UTM_Zone_42N",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",69.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]',
+  32643: 'PROJCS["WGS_1984_UTM_Zone_43N",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",75.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]',
+  32644: 'PROJCS["WGS_1984_UTM_Zone_44N",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",81.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]',
+  4284: 'GEOGCS["GCS_Pulkovo_1942",DATUM["D_Pulkovo_1942",SPHEROID["Krasovsky_1940",6378245.0,298.3]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]',
+};
+
+// ══════════════════════════════════════
+// MAP
+// ══════════════════════════════════════
+const map = L.map('map',{center:[41.3,63.5],zoom:6,zoomControl:false});
+L.control.zoom({position:'bottomleft'}).addTo(map);
+L.control.scale({imperial:false,position:'bottomleft'}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{
+  attribution:'Tiles © Esri',maxZoom:19
+}).addTo(map);
+
+// Coord display
+map.on('mousemove', e=>{
+  const el=document.getElementById('coordPill');
+  el.textContent=`${e.latlng.lat.toFixed(5)}° N  ${e.latlng.lng.toFixed(5)}° E`;
+  el.classList.add('live');
+});
+map.on('mouseout',()=>{
+  document.getElementById('coordPill').textContent='—';
+  document.getElementById('coordPill').classList.remove('live');
+});
+map.on('zoomend',()=>document.getElementById('zoomVal').textContent=map.getZoom());
+document.getElementById('zoomVal').textContent=map.getZoom();
+
+// ══════════════════════════════════════
+// STATE
+// ══════════════════════════════════════
+let rows=[];          // {lat,lng}
+let selected=new Set(); // indices
+let markers=[];
+let selectedProj=4326;
+
+// ══════════════════════════════════════
+// UPLOAD
+// ══════════════════════════════════════
+const fileInput=document.getElementById('fileInput');
+const uploadZone=document.getElementById('uploadZone');
+
+uploadZone.addEventListener('dragover',e=>{e.preventDefault();uploadZone.classList.add('drag')});
+uploadZone.addEventListener('dragleave',()=>uploadZone.classList.remove('drag'));
+uploadZone.addEventListener('drop',e=>{e.preventDefault();uploadZone.classList.remove('drag');if(e.dataTransfer.files[0])processFile(e.dataTransfer.files[0])});
+fileInput.addEventListener('change',e=>{if(e.target.files[0])processFile(e.target.files[0])});
+
+function processFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'binary'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const json=XLSX.utils.sheet_to_json(ws,{header:1});
+      parseRows(json,file.name);
+    }catch(err){showToast('Файлни ўқишда хато: '+err.message,'error')}
+  };
+  reader.readAsBinaryString(file);
+}
+
+function parseRows(json,fname){
+  // Find lat/lng columns (flexible header detection)
+  const headers=(json[0]||[]).map(h=>String(h).toLowerCase().trim());
+  let latCol=-1,lngCol=-1;
+  headers.forEach((h,i)=>{
+    if(/lat|latitude|кенгlik|кенг|широта/.test(h)) latCol=i;
+    if(/lon|lng|longitude|узунlik|узун|долгота/.test(h)) lngCol=i;
+  });
+  // If no headers found, guess: col0=lat, col1=lng
+  const dataStart = (latCol>=0||lngCol>=0) ? 1 : 0;
+  if(latCol<0) latCol=0;
+  if(lngCol<0) lngCol=1;
+
+  const parsed=[];
+  for(let i=dataStart;i<json.length;i++){
+    const r=json[i];
+    const lat=parseFloat(r[latCol]);
+    const lng=parseFloat(r[lngCol]);
+    if(!isNaN(lat)&&!isNaN(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180){
+      parsed.push({lat,lng,row:i+1});
+    }
+  }
+
+  if(!parsed.length){showToast('Файлда валид координата топилмади','error');return;}
+
+  rows=parsed;
+  selected=new Set(rows.map((_,i)=>i));
+  renderTable();
+  renderMarkers();
+  showFileInfo(fname,rows.length);
+  updateSteps(2);
+  showToast(`${rows.length} та нуқта юкланди`,'success');
+}
+
+function showFileInfo(fname,count){
+  document.getElementById('uploadZone').style.display='none';
+  const fi=document.getElementById('fileInfo');
+  fi.style.display='block';
+  fi.innerHTML=`<div class="file-loaded">
+    <span>📊</span>
+    <span class="fname">${fname}</span>
+    <span class="fcount">${count} қатор</span>
+    <button class="btn-clear" title="Тозалаш" onclick="clearFile()">✕</button>
+  </div>`;
+}
+
+function clearFile(){
+  rows=[];selected=new Set();
+  document.getElementById('uploadZone').style.display='block';
+  document.getElementById('fileInfo').style.display='none';
+  document.getElementById('emptyState').style.display='block';
+  const tc=document.getElementById('tableContainer');
+  tc.style.display='none';
+  clearMarkers();
+  updateExportBtn();
+  updateSteps(1);
+  document.getElementById('markerCount').textContent='0 нуқта';
+  fileInput.value='';
+}
+
+// ══════════════════════════════════════
+// TABLE
+// ══════════════════════════════════════
+function renderTable(){
+  document.getElementById('emptyState').style.display='none';
+  const tc=document.getElementById('tableContainer');
+  tc.style.display='flex';
+  const tbody=document.getElementById('tableBody');
+  tbody.innerHTML='';
+  rows.forEach((r,i)=>{
+    const tr=document.createElement('tr');
+    tr.id=`row-${i}`;
+    if(selected.has(i))tr.classList.add('selected');
+    tr.innerHTML=`
+      <td class="chk"><input type="checkbox" class="cb" ${selected.has(i)?'checked':''} onchange="toggleRow(${i})" onclick="event.stopPropagation()"></td>
+      <td>${r.row}</td>
+      <td>${r.lat.toFixed(6)}</td>
+      <td>${r.lng.toFixed(6)}</td>`;
+    tr.addEventListener('click',()=>toggleRow(i));
+    tbody.appendChild(tr);
+  });
+  updateSelectAllCb();
+  updateExportBtn();
+}
+
+function toggleRow(i){
+  if(selected.has(i))selected.delete(i);
+  else selected.add(i);
+  const tr=document.getElementById(`row-${i}`);
+  const cb=tr.querySelector('.cb');
+  if(selected.has(i)){tr.classList.add('selected');cb.checked=true;}
+  else{tr.classList.remove('selected');cb.checked=false;}
+  updateMarkers();
+  updateSelectAllCb();
+  updateExportBtn();
+}
+
+function toggleSelectAll(){
+  const all=selected.size===rows.length;
+  if(all)selected.clear();
+  else rows.forEach((_,i)=>selected.add(i));
+  renderTable();
+  updateMarkers();
+}
+
+function updateSelectAllCb(){
+  const cb=document.getElementById('cbAll');
+  const txt=document.getElementById('selAllText');
+  cb.checked=selected.size===rows.length&&rows.length>0;
+  cb.indeterminate=selected.size>0&&selected.size<rows.length;
+  txt.textContent=`Барчасини танлаш (${selected.size}/${rows.length})`;
+}
+
+// ══════════════════════════════════════
+// MARKERS
+// ══════════════════════════════════════
+function makeIcon(sel){
+  return L.divIcon({
+    className:'',
+    html:`<div class="pulse-dot${sel?' selected':''}"></div>`,
+    iconSize:[12,12],iconAnchor:[6,6]
+  });
+}
+
+function renderMarkers(){
+  clearMarkers();
+  rows.forEach((r,i)=>{
+    const m=L.marker([r.lat,r.lng],{icon:makeIcon(selected.has(i))})
+      .addTo(map)
+      .bindPopup(`<b>Нуқта #${r.row}</b><br>Lat: ${r.lat}<br>Lng: ${r.lng}`,{maxWidth:180});
+    m.on('click',()=>toggleRow(i));
+    markers.push(m);
+  });
+  if(rows.length){
+    const bounds=L.latLngBounds(rows.map(r=>[r.lat,r.lng]));
+    map.fitBounds(bounds,{padding:[40,40]});
+  }
+  document.getElementById('markerCount').textContent=`${rows.length} нуқта`;
+}
+
+function updateMarkers(){
+  markers.forEach((m,i)=>m.setIcon(makeIcon(selected.has(i))));
+}
+
+function clearMarkers(){
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
+}
+
+// ══════════════════════════════════════
+// PROJECTION
+// ══════════════════════════════════════
+function selectProj(btn){
+  document.querySelectorAll('.proj-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  selectedProj=parseInt(btn.dataset.epsg);
+}
+
+// ══════════════════════════════════════
+// EXPORT SHAPEFILE (manual, no shpwrite)
+// ══════════════════════════════════════
+function updateExportBtn(){
+  const btn=document.getElementById('btnExport');
+  const cnt=document.getElementById('exportCount');
+  const n=selected.size;
+  cnt.textContent=`${n} та`;
+  btn.disabled=n===0;
+  if(n>0)updateSteps(3);
+}
+
+async function exportShapefile(){
+  const pts=[];
+  selected.forEach(i=>{
+    const r=rows[i];
+    const [x,y]=proj4('EPSG:4326','EPSG:'+selectedProj,[r.lng,r.lat]);
+    pts.push({x,y,id:r.row,lat:r.lat,lng:r.lng});
+  });
+  if(!pts.length){showToast('Нуқта танланмаган','error');return;}
+
+  try{
+    const zip=buildShapefileZip(pts,selectedProj);
+    const blob=await zip.generateAsync({type:'blob'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=`points_EPSG${selectedProj}.zip`;
+    a.click();
+    showToast(`${pts.length} та нуқта EPSG:${selectedProj} да юкланди`,'success');
+  }catch(e){
+    showToast('Хато: '+e.message,'error');
+    console.error(e);
+  }
+}
+
+function buildShapefileZip(pts,epsg){
+  // ── .shp ──
+  const recLen=2+8+8; // type(4)+x(8)+y(8) = 20 bytes = 10 words
+  const contentLen=50+pts.length*(4+recLen); // header=50words, each record = 4words header + 10words content
+  const shpBuf=new ArrayBuffer((50+pts.length*(4+10))*2);
+  const shpV=new DataView(shpBuf);
+  // File header
+  setInt32BE(shpV,0,9994);
+  setInt32BE(shpV,24,contentLen);
+  setInt32LE(shpV,28,1000);
+  setInt32LE(shpV,32,1); // shape type: point
+  // Bounding box (min/max x,y,z,m)
+  const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+  setFloat64LE(shpV,36,Math.min(...xs));
+  setFloat64LE(shpV,44,Math.min(...ys));
+  setFloat64LE(shpV,52,Math.max(...xs));
+  setFloat64LE(shpV,60,Math.max(...ys));
+  // Z range (0)
+  setFloat64LE(shpV,68,0); setFloat64LE(shpV,76,0);
+  // M range (0)
+  setFloat64LE(shpV,84,0); setFloat64LE(shpV,92,0);
+
+  let offset=100;
+  pts.forEach((p,i)=>{
+    setInt32BE(shpV,offset,i+1);      // record number (1-based)
+    setInt32BE(shpV,offset+4,10);     // content length in 16-bit words
+    setInt32LE(shpV,offset+8,1);      // shape type = point
+    setFloat64LE(shpV,offset+12,p.x);
+    setFloat64LE(shpV,offset+20,p.y);
+    offset+=28;
+  });
+
+  // ── .shx ──
+  const shxBuf=new ArrayBuffer((50+pts.length*4)*2);
+  const shxV=new DataView(shxBuf);
+  const shxLen=50+pts.length*4;
+  setInt32BE(shxV,0,9994);
+  setInt32BE(shxV,24,shxLen);
+  setInt32LE(shxV,28,1000);
+  setInt32LE(shxV,32,1);
+  setFloat64LE(shxV,36,Math.min(...xs));
+  setFloat64LE(shxV,44,Math.min(...ys));
+  setFloat64LE(shxV,52,Math.max(...xs));
+  setFloat64LE(shxV,60,Math.max(...ys));
+  setFloat64LE(shxV,68,0); setFloat64LE(shxV,76,0);
+  setFloat64LE(shxV,84,0); setFloat64LE(shxV,92,0);
+  let shxOff=100, shpRecOff=50;
+  pts.forEach(()=>{
+    setInt32BE(shxV,shxOff,shpRecOff);
+    setInt32BE(shxV,shxOff+4,10);
+    shxOff+=8; shpRecOff+=14;
+  });
+
+  // ── .dbf ──
+  const dbf=buildDbf(pts);
+
+  // ── .prj ──
+  const prjText=WKT[epsg]||WKT[4326];
+
+  // ── ZIP ──
+  const zip=new JSZip();
+  const base=`points_EPSG${epsg}`;
+  zip.file(`${base}.shp`,shpBuf);
+  zip.file(`${base}.shx`,shxBuf);
+  zip.file(`${base}.dbf`,dbf);
+  zip.file(`${base}.prj`,prjText);
+  return zip;
+}
+
+function buildDbf(pts){
+  // Fields: ID(N,10,0), LAT(N,18,6), LNG(N,18,6)
+  const fields=[
+    {name:'ID',      type:'N',len:10,dec:0},
+    {name:'LAT',     type:'N',len:18,dec:6},
+    {name:'LNG',     type:'N',len:18,dec:6},
+  ];
+  const headerSize=32+(fields.length*32)+1;
+  const recSize=1+fields.reduce((s,f)=>s+f.len,0);
+  const buf=new ArrayBuffer(headerSize+pts.length*recSize+1);
+  const v=new DataView(buf);
+  const u=new Uint8Array(buf);
+
+  u[0]=3; // version
+  const now=new Date();
+  u[1]=now.getFullYear()-1900; u[2]=now.getMonth()+1; u[3]=now.getDate();
+  // num records
+  v.setUint32(4,pts.length,true);
+  // header size
+  v.setUint16(8,headerSize,true);
+  // rec size
+  v.setUint16(10,recSize,true);
+
+  fields.forEach((f,fi)=>{
+    const off=32+fi*32;
+    writeStr(u,off,f.name,11);
+    u[off+11]=f.type.charCodeAt(0);
+    u[off+16]=f.len;
+    u[off+17]=f.dec;
+  });
+  u[32+fields.length*32]=0x0D; // field terminator
+
+  pts.forEach((p,ri)=>{
+    let off=headerSize+ri*recSize;
+    u[off]=0x20; // not deleted
+    off++;
+    const vals=[String(p.id), p.lat.toFixed(6), p.lng.toFixed(6)];
+    fields.forEach((f,fi)=>{
+      const s=vals[fi].padStart(f.len,' ').slice(0,f.len);
+      writeStr(u,off,s,f.len);
+      off+=f.len;
+    });
+  });
+  u[headerSize+pts.length*recSize]=0x1A; // EOF
+  return buf;
+}
+
+function writeStr(u,off,str,len){
+  for(let i=0;i<len;i++) u[off+i]=(i<str.length)?str.charCodeAt(i):0;
+}
+
+// DataView helpers
+function setInt32BE(v,o,n){v.setInt32(o,n,false)}
+function setInt32LE(v,o,n){v.setInt32(o,n,true)}
+function setFloat64LE(v,o,n){v.setFloat64(o,n,true)}
+
+// ══════════════════════════════════════
+// UI HELPERS
+// ══════════════════════════════════════
+function updateSteps(active){
+  ['step1','step2','step3'].forEach((id,i)=>{
+    const el=document.getElementById(id);
+    el.className='step';
+    if(i+1<active)el.classList.add('done');
+    else if(i+1===active)el.classList.add('active');
+  });
+  ['n1','n2','n3'].forEach((id,i)=>{
+    const el=document.getElementById(id);
+    el.className=i+1<active?'num done':'num';
+  });
+}
+
+let toastTimer;
+function showToast(msg,type='info'){
+  const t=document.getElementById('toast');
+  const icons={success:'✓',error:'✕',info:'ℹ'};
+  t.innerHTML=`<span>${icons[type]||'ℹ'}</span><span>${msg}</span>`;
+  t.className=`toast ${type} show`;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+updateSteps(1);
+</script>
+</body>
+</html>
