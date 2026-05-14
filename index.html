@@ -36,6 +36,23 @@
   --muted:#4a7a94;
   --radius:8px;
   --sidebar:340px;
+  --topbar-bg:rgba(5,10,14,0.95);
+  --statusbar-bg:rgba(5,10,14,.9);
+}
+:root.light{
+  --bg:#f0f4f8;
+  --surface:#ffffff;
+  --panel:#e8eef4;
+  --border:#c8d8e8;
+  --border2:#b0c4d8;
+  --accent:#00965a;
+  --accent2:#0070cc;
+  --warn:#cc8800;
+  --danger:#cc2222;
+  --text:#1a2e3d;
+  --muted:#6a8fa8;
+  --topbar-bg:rgba(240,244,248,0.97);
+  --statusbar-bg:rgba(240,244,248,0.95);
 }
 
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;overflow:hidden}
@@ -44,7 +61,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space 
 .app{display:flex;height:100vh;flex-direction:column}
 .topbar{
   height:52px;flex-shrink:0;
-  background:rgba(5,10,14,0.95);
+  background:var(--topbar-bg);
   border-bottom:1px solid var(--border);
   display:flex;align-items:center;padding:0 16px;gap:12px;
   backdrop-filter:blur(10px);
@@ -86,6 +103,17 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space 
   padding:3px 10px;border-radius:20px;transition:color .2s;
 }
 .coord-pill.live{color:var(--accent2)}
+
+/* ══ THEME TOGGLE ══ */
+.theme-toggle{
+  display:flex;align-items:center;gap:6px;
+  background:var(--panel);border:1px solid var(--border2);
+  color:var(--text);font-family:'Space Grotesk',sans-serif;
+  font-size:11px;font-weight:600;
+  padding:4px 12px;border-radius:20px;
+  cursor:pointer;transition:all .2s;
+}
+.theme-toggle:hover{border-color:var(--accent2);color:var(--accent2);background:rgba(0,153,255,.08)}
 
 /* ══ SIDEBAR SECTIONS ══ */
 .sb-section{
@@ -240,7 +268,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space 
   position:fixed;bottom:0;left:0;
   right:var(--sidebar);
   height:26px;
-  background:rgba(5,10,14,.9);
+  background:var(--statusbar-bg);
   border-top:1px solid var(--border);
   display:flex;align-items:center;padding:0 12px;gap:16px;
   font-family:'Fira Code',monospace;font-size:9px;color:var(--muted);
@@ -274,6 +302,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space 
       <div class="step" id="step3">03 ЭКСПОРТ</div>
     </div>
     <div class="topbar-right">
+      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Режимни алмаштириш">
+        <span id="themeIcon">🌙</span>
+        <span id="themeLabel">Тунги</span>
+      </button>
       <div class="coord-pill" id="coordPill">—</div>
     </div>
   </div>
@@ -413,9 +445,35 @@ const WKT = {
 const map = L.map('map',{center:[41.3,63.5],zoom:6,zoomControl:false});
 L.control.zoom({position:'bottomleft'}).addTo(map);
 L.control.scale({imperial:false,position:'bottomleft'}).addTo(map);
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{
-  attribution:'Tiles © Esri',maxZoom:19
-}).addTo(map);
+
+const TILES = {
+  dark:  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}),
+  light: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}),
+};
+let isDark = true;
+TILES.dark.addTo(map);
+
+function applyTheme(){
+  const root = document.documentElement;
+  if(isDark){
+    root.classList.remove('light');
+    if(map.hasLayer(TILES.light)) map.removeLayer(TILES.light);
+    if(!map.hasLayer(TILES.dark)) TILES.dark.addTo(map);
+    document.getElementById('themeIcon').textContent='🌙';
+    document.getElementById('themeLabel').textContent='Тунги';
+  } else {
+    root.classList.add('light');
+    if(map.hasLayer(TILES.dark)) map.removeLayer(TILES.dark);
+    if(!map.hasLayer(TILES.light)) TILES.light.addTo(map);
+    document.getElementById('themeIcon').textContent='☀️';
+    document.getElementById('themeLabel').textContent='Кундузги';
+  }
+}
+
+function toggleTheme(){
+  isDark = !isDark;
+  applyTheme();
+}
 
 // Coord display
 map.on('mousemove', e=>{
